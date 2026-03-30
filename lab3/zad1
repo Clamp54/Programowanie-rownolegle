@@ -3,7 +3,6 @@
 #include <vector>
 #include <algorithm>
 #include <ctime>
-#include <cmath>
 using namespace std;
 void bubblesort(int *v, int n) {
 for (int i = 0; i < n - 1; i++) {
@@ -27,73 +26,66 @@ return result;
 }
 int main(int argc, char **argv) {
 MPI_Init(&argc, &argv);
-int world_rank, world_size;
-MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-int n = 123; // Zmien na 3 ostatnie cyfry albumu 
+int rank, size;
+MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+MPI_Comm_size(MPI_COMM_WORLD, &size);
+int n = 123; 
 int *data = NULL;
-int chunk_size;
-if (world_rank == 0) {
-chunk_size = (n + world_size - 1) / world_size; [cite: 16]
-int padded_n = chunk_size * world_size;
+int chunk_size = (n + size - 1) / size;
+int padded_n = chunk_size * size;
+if (rank == 0) {
 data = new int[padded_n];
 srand(time(NULL));
 for (int i = 0; i < padded_n; i++) {
-if (i < n) data[i] = rand() % 1001; [cite: 18]
-else data[i] = 0; [cite: 17]
+if (i < n) data[i] = rand() % 1001;
+else data[i] = 0;
 }
-cout << "Nieposortowana tablica: ";
+cout << "Tablica przed: ";
 for (int i = 0; i < n; i++) cout << data[i] << " ";
 cout << endl;
 }
-MPI_Barrier(MPI_COMM_WORLD); [cite: 20]
-double start_time = MPI_Wtime();
-MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD); [cite: 21]
-chunk_size = (n + world_size - 1) / world_size; [cite: 22]
-int *chunk = new int[chunk_size]; [cite: 24]
-MPI_Scatter(data, chunk_size, MPI_INT, chunk, chunk_size, MPI_INT, 0, MPI_COMM_WORLD); [cite: 25]
-if (world_rank == 0) {
+MPI_Barrier(MPI_COMM_WORLD);
+double t1 = MPI_Wtime();
+MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+int *chunk = new int[chunk_size];
+MPI_Scatter(data, chunk_size, MPI_INT, chunk, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+if (rank == 0) {
 delete[] data;
-data = NULL; [cite: 26]
+data = NULL;
 }
-int s = chunk_size;
-if (world_rank == world_size - 1) {
-s = n - (world_size - 1) * chunk_size;
+int s = (rank == size - 1) ? (n - rank * chunk_size) : chunk_size;
 if (s < 0) s = 0;
-} [cite: 27]
-bubblesort(chunk, s); [cite: 28]
+bubblesort(chunk, s);
 int step = 1;
-while (step < world_size) {
-if (world_rank % (2 * step) != 0) { [cite: 91]
-int dest = world_rank - step;
+while (step < size) {
+if (rank % (2 * step) != 0) {
+int dest = rank - step;
 MPI_Send(&s, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
 MPI_Send(chunk, s, MPI_INT, dest, 0, MPI_COMM_WORLD);
-break; [cite: 90]
+break;
 }
-if (world_rank + step < world_size) { [cite: 92]
-int src = world_rank + step;
+if (rank + step < size) {
+int src = rank + step;
 int s_recv;
-MPI_Recv(&s_recv, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); [cite: 93]
-int *received_chunk = new int[s_recv]; [cite: 94]
-MPI_Recv(received_chunk, s_recv, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); [cite: 95]
-int *merged_data = merge(chunk, s, received_chunk, s_recv); [cite: 96]
+MPI_Recv(&s_recv, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+int *received = new int[s_recv];
+MPI_Recv(received, s_recv, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+int *temp_merged = merge(chunk, s, received, s_recv);
 delete[] chunk;
-delete[] received_chunk;
-chunk = merged_data;
-s = s + s_recv; [cite: 97]
+delete[] received;
+chunk = temp_merged;
+s += s_recv;
 }
-step *= 2; [cite: 89]
+step *= 2;
 }
-double end_time = MPI_Wtime();
-if (world_rank == 0) {
-cout << "Rozmiar posortowanej tablicy: " << s << endl; [cite: 101]
-cout << "Posortowana tablica: ";
+double t2 = MPI_Wtime();
+if (rank == 0) {
+cout << "Tablica po: ";
 for (int i = 0; i < s; i++) cout << chunk[i] << " ";
-cout << endl; [cite: 102]
-cout << "Liczba procesow: " << world_size << endl; [cite: 103]
-cout << "Czas obliczeniowy: " << end_time - start_time << " s" << endl; [cite: 104]
+cout << endl;
+cout << "Czas: " << t2 - t1 << "s | Procesy: " << size << endl;
 delete[] chunk;
 }
-MPI_Finalize(); [cite: 105]
+MPI_Finalize();
 return 0;
 }
