@@ -3,89 +3,103 @@
 #include <vector>
 #include <algorithm>
 #include <ctime>
+
 using namespace std;
+
 void bubblesort(int *v, int n) {
-for (int i = 0; i < n - 1; i++) {
-for (int j = 0; j < n - i - 1; j++) {
+for (int i = n - 2; i >= 0; i--) {
+for (int j = 0; j <= i; j++) {
 if (v[j] > v[j + 1]) {
 swap(v[j], v[j + 1]);
 }
 }
 }
 }
-int *merge(int *v1, int n1, int v2, int n2) {
-int *result = new int[n1 + n2];
+
+int* merge(int *v1, int n1, int *v2, int n2) {
+int *res = new int[n1 + n2];
 int i = 0, j = 0, k = 0;
 while (i < n1 && j < n2) {
-if (v1[i] < v2[j]) result[k++] = v1[i++];
-else result[k++] = v2[j++];
+if (v1[i] <= v2[j]) res[k++] = v1[i++];
+else res[k++] = v2[j++];
 }
-while (i < n1) result[k++] = v1[i++];
-while (j < n2) result[k++] = v2[j++];
-return result;
+while (i < n1) res[k++] = v1[i++];
+while (j < n2) res[k++] = v2[j++];
+return res;
 }
+
 int main(int argc, char **argv) {
-MPI_Init(&argc, &argv);
 int rank, size;
+MPI_Init(&argc, &argv);
 MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 MPI_Comm_size(MPI_COMM_WORLD, &size);
-int n = 123; 
-int *data = NULL;
-int chunk_size = (n + size - 1) / size;
-int padded_n = chunk_size * size;
+
+int n = 123;
+int *data = nullptr;
+int chunk_size;
+
 if (rank == 0) {
-data = new int[padded_n];
+chunk_size = (n + size - 1) / size;
+int total_size = chunk_size * size;
+data = new int[total_size];
 srand(time(NULL));
-for (int i = 0; i < padded_n; i++) {
+for (int i = 0; i < total_size; i++) {
 if (i < n) data[i] = rand() % 1001;
-else data[i] = 0;
+else data[i] = 2000;
 }
-cout << "Tablica przed: ";
+cout << "Tablica nieposortowana:" << endl;
 for (int i = 0; i < n; i++) cout << data[i] << " ";
 cout << endl;
 }
+
 MPI_Barrier(MPI_COMM_WORLD);
-double t1 = MPI_Wtime();
-MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+double start_time = MPI_Wtime();
+
+MPI_Bcast(&chunk_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
 int *chunk = new int[chunk_size];
 MPI_Scatter(data, chunk_size, MPI_INT, chunk, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+
 if (rank == 0) {
 delete[] data;
-data = NULL;
+data = nullptr;
 }
-int s = (rank == size - 1) ? (n - rank * chunk_size) : chunk_size;
-if (s < 0) s = 0;
-bubblesort(chunk, s);
-int step = 1;
-while (step < size) {
+
+bubblesort(chunk, chunk_size);
+
+int current_size = chunk_size;
+for (int step = 1; step < size; step *= 2) {
 if (rank % (2 * step) != 0) {
 int dest = rank - step;
-MPI_Send(&s, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
-MPI_Send(chunk, s, MPI_INT, dest, 0, MPI_COMM_WORLD);
+MPI_Send(&current_size, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+MPI_Send(chunk, current_size, MPI_INT, dest, 0, MPI_COMM_WORLD);
 break;
 }
-if (rank + step < size) {
-int src = rank + step;
-int s_recv;
-MPI_Recv(&s_recv, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-int *received = new int[s_recv];
-MPI_Recv(received, s_recv, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-int *temp_merged = merge(chunk, s, received, s_recv);
+else if (rank + step < size) {
+int src_size;
+MPI_Recv(&src_size, 1, MPI_INT, rank + step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+int *received_chunk = new int[src_size];
+MPI_Recv(received_chunk, src_size, MPI_INT, rank + step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+int *merged_chunk = merge(chunk, current_size, received_chunk, src_size);
 delete[] chunk;
-delete[] received;
-chunk = temp_merged;
-s += s_recv;
+delete[] received_chunk;
+chunk = merged_chunk;
+current_size += src_size;
 }
-step *= 2;
 }
-double t2 = MPI_Wtime();
+
+double end_time = MPI_Wtime();
+
 if (rank == 0) {
-cout << "Tablica po: ";
-for (int i = 0; i < s; i++) cout << chunk[i] << " ";
+cout << "\nWyniki po scaleniu:" << endl;
+cout << "Liczba procesów: " << size << endl;
+cout << "Czas obliczen: " << end_time - start_time << " s" << endl;
+cout << "Pierwsze 10 elementow: ";
+for (int i = 0; i < (n < 10 ? n : 10); i++) cout << chunk[i] << " ";
 cout << endl;
-cout << "Czas: " << t2 - t1 << "s | Procesy: " << size << endl;
-delete[] chunk;
 }
+
+delete[] chunk;
 MPI_Finalize();
 return 0;
 }
