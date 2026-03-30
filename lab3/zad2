@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --job-name=sort_test
+#SBATCH --nodes=1
+#SBATCH --ntasks=20
+#SBATCH --time=00:15:00
+#SBATCH --output=wyniki_%j.out
+#SBATCH --mail-type=END
+#SBATCH --mail-user=twoj_mail@student.pl
+cd $SLURM_SUBMIT_DIR
+for p in 1 5 10 15 20
+do
+srun -n $p ./sortowanie_mpi 1000000
+done
