@@ -1,0 +1,99 @@
+#include <iostream>
+#include <mpi.h>
+#include <vector>
+#include <algorithm>
+#include <ctime>
+#include <cmath>
+using namespace std;
+void bubblesort(int *v, int n) {
+for (int i = 0; i < n - 1; i++) {
+for (int j = 0; j < n - i - 1; j++) {
+if (v[j] > v[j + 1]) {
+swap(v[j], v[j + 1]);
+}
+}
+}
+}
+int *merge(int *v1, int n1, int v2, int n2) {
+int *result = new int[n1 + n2];
+int i = 0, j = 0, k = 0;
+while (i < n1 && j < n2) {
+if (v1[i] < v2[j]) result[k++] = v1[i++];
+else result[k++] = v2[j++];
+}
+while (i < n1) result[k++] = v1[i++];
+while (j < n2) result[k++] = v2[j++];
+return result;
+}
+int main(int argc, char **argv) {
+MPI_Init(&argc, &argv);
+int world_rank, world_size;
+MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+int n = 123; // Zmien na 3 ostatnie cyfry albumu 
+int *data = NULL;
+int chunk_size;
+if (world_rank == 0) {
+chunk_size = (n + world_size - 1) / world_size; [cite: 16]
+int padded_n = chunk_size * world_size;
+data = new int[padded_n];
+srand(time(NULL));
+for (int i = 0; i < padded_n; i++) {
+if (i < n) data[i] = rand() % 1001; [cite: 18]
+else data[i] = 0; [cite: 17]
+}
+cout << "Nieposortowana tablica: ";
+for (int i = 0; i < n; i++) cout << data[i] << " ";
+cout << endl;
+}
+MPI_Barrier(MPI_COMM_WORLD); [cite: 20]
+double start_time = MPI_Wtime();
+MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD); [cite: 21]
+chunk_size = (n + world_size - 1) / world_size; [cite: 22]
+int *chunk = new int[chunk_size]; [cite: 24]
+MPI_Scatter(data, chunk_size, MPI_INT, chunk, chunk_size, MPI_INT, 0, MPI_COMM_WORLD); [cite: 25]
+if (world_rank == 0) {
+delete[] data;
+data = NULL; [cite: 26]
+}
+int s = chunk_size;
+if (world_rank == world_size - 1) {
+s = n - (world_size - 1) * chunk_size;
+if (s < 0) s = 0;
+} [cite: 27]
+bubblesort(chunk, s); [cite: 28]
+int step = 1;
+while (step < world_size) {
+if (world_rank % (2 * step) != 0) { [cite: 91]
+int dest = world_rank - step;
+MPI_Send(&s, 1, MPI_INT, dest, 0, MPI_COMM_WORLD);
+MPI_Send(chunk, s, MPI_INT, dest, 0, MPI_COMM_WORLD);
+break; [cite: 90]
+}
+if (world_rank + step < world_size) { [cite: 92]
+int src = world_rank + step;
+int s_recv;
+MPI_Recv(&s_recv, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); [cite: 93]
+int *received_chunk = new int[s_recv]; [cite: 94]
+MPI_Recv(received_chunk, s_recv, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); [cite: 95]
+int *merged_data = merge(chunk, s, received_chunk, s_recv); [cite: 96]
+delete[] chunk;
+delete[] received_chunk;
+chunk = merged_data;
+s = s + s_recv; [cite: 97]
+}
+step *= 2; [cite: 89]
+}
+double end_time = MPI_Wtime();
+if (world_rank == 0) {
+cout << "Rozmiar posortowanej tablicy: " << s << endl; [cite: 101]
+cout << "Posortowana tablica: ";
+for (int i = 0; i < s; i++) cout << chunk[i] << " ";
+cout << endl; [cite: 102]
+cout << "Liczba procesow: " << world_size << endl; [cite: 103]
+cout << "Czas obliczeniowy: " << end_time - start_time << " s" << endl; [cite: 104]
+delete[] chunk;
+}
+MPI_Finalize(); [cite: 105]
+return 0;
+}
